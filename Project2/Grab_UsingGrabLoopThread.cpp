@@ -16,6 +16,34 @@
 #include "TalkToCamera.h"
 
 
+#define USE_USB 
+
+#if defined( USE_1394 )
+// Settings for using Basler IEEE 1394 cameras.
+#include <pylon/1394/Basler1394InstantCamera.h>
+typedef Pylon::CBasler1394InstantCamera Camera_t;
+typedef Pylon::CBasler1394ImageEventHandler ImageEventHandler_t; // Or use Camera_t::ImageEventHandler_t
+typedef Pylon::CBasler1394GrabResultPtr GrabResultPtr_t; // Or use Camera_t::GrabResultPtr_t
+using namespace Basler_IIDC1394CameraParams;
+#elif defined ( USE_GIGE )
+// Settings for using Basler GigE cameras.
+#include <pylon/gige/BaslerGigEInstantCamera.h>
+typedef Pylon::CBaslerGigEInstantCamera Camera_t;
+typedef Pylon::CBaslerGigEImageEventHandler ImageEventHandler_t; // Or use Camera_t::ImageEventHandler_t
+typedef Pylon::CBaslerGigEGrabResultPtr GrabResultPtr_t; // Or use Camera_t::GrabResultPtr_t
+using namespace Basler_GigECameraParams;
+#elif defined( USE_USB )
+// Settings for using Basler USB cameras.
+#include <pylon/usb/BaslerUsbInstantCamera.h>
+typedef Pylon::CBaslerUsbInstantCamera Camera_t;
+typedef Pylon::CBaslerUsbImageEventHandler ImageEventHandler_t; // Or use Camera_t::ImageEventHandler_t
+typedef Pylon::CBaslerUsbGrabResultPtr GrabResultPtr_t; // Or use Camera_t::GrabResultPtr_t
+using namespace Basler_UsbCameraParams;
+#else
+
+#endif
+
+
 
 // Namespace for using pylon objects.
 using namespace Pylon;
@@ -25,6 +53,9 @@ using namespace std;
 
 // Namespace for using opencv objects.
 using namespace cv;
+
+
+
 
 int main(int argc, char* argv[])
 {
@@ -37,16 +68,12 @@ int main(int argc, char* argv[])
     try
     {
         // Create an instant camera object for the camera device found first.
-        CInstantCamera camera( CTlFactory::GetInstance().CreateFirstDevice());
+        Camera_t camera( CTlFactory::GetInstance().CreateFirstDevice());
 
+		//ptrgrabresult is a smart ptr that about the grab result
 		CGrabResultPtr ptrGrabResult;
 
-		GenApi::INodeMap& nodemap = camera.GetNodeMap();
-
-		GenApi::CIntegerPtr width = nodemap.GetNode("Width");
-		GenApi::CIntegerPtr height = nodemap.GetNode("Height");
-
-
+		//format converter and pylonimage is about transform the pylon picture into opencv format
 		CImageFormatConverter formatConverter;
 
 		formatConverter.OutputPixelFormat = PixelType_BGR8packed;
@@ -55,11 +82,24 @@ int main(int argc, char* argv[])
 
 		Mat OpenCvImage;
 
+
+		namedWindow("test");
+
+		init_camera(camera);//open the camera
+
+		/*
+		this part mainly about create a video writer, to save images as a video
+		
+		*/
 		VideoWriter cvVideoCreator;
 
 		string videoFileName = "testfile.avi";
+		GenApi::INodeMap& nodemap = camera.GetNodeMap();
 
-		Size framesize = Size((int)width->GetValue(),(int)height->GetValue());
+		GenApi::CIntegerPtr width = nodemap.GetNode("Width");
+		GenApi::CIntegerPtr height = nodemap.GetNode("Height");
+
+		Size framesize = Size((int)width->GetValue(), (int)height->GetValue());
 
 		int codec = CV_FOURCC('M', 'J', 'P', 'G');
 		double fps = 24;
@@ -70,9 +110,18 @@ int main(int argc, char* argv[])
 			cerr << "could not open out put video file for writing\n" << endl;
 		}
 
-		namedWindow("test");
 
-		init_camera(camera);
+		//this part is about the chunk property of cameras
+		if (GenApi::IsWritable(camera.ChunkModeActive))
+		{
+			camera.ChunkModeActive.SetValue(true);
+		}
+		else
+		{
+			throw RUNTIME_EXCEPTION("The camera doesn't support chunk features");
+		}
+
+
 
 		grab_frame(camera,ptrGrabResult);
 
